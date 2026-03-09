@@ -3,44 +3,37 @@ package com.fileorganizer;
 import java.io.IOException;
 import java.nio.file.*;
 
-// Monitorea una carpeta y reacciona cuando se añade un archivo nuevo
 public class FolderWatcher {
 
     private final Path folderToWatch;
     private final FileClassifier classifier;
     private final FileMover mover;
+    private final Logger logger;
 
     public FolderWatcher(Path folderToWatch) {
         this.folderToWatch = folderToWatch;
         this.classifier = new FileClassifier();
         this.mover = new FileMover();
+        this.logger = new Logger(folderToWatch);
     }
 
-    // Inicia el monitoreo en bucle infinito
     public void start() throws IOException, InterruptedException {
-        System.out.println("👀 Monitoreando carpeta: " + folderToWatch);
+        logger.logInicio(folderToWatch);
         System.out.println("Presiona Ctrl+C para detener.\n");
 
         WatchService watchService = FileSystems.getDefault().newWatchService();
         folderToWatch.register(watchService, StandardWatchEventKinds.ENTRY_CREATE);
 
         while (true) {
-            WatchKey key = watchService.take(); // espera hasta que ocurra algo
+            WatchKey key = watchService.take();
 
             for (WatchEvent<?> event : key.pollEvents()) {
-                WatchEvent.Kind<?> kind = event.kind();
-
-                // Ignorar eventos de desbordamiento
-                if (kind == StandardWatchEventKinds.OVERFLOW) {
-                    continue;
-                }
+                if (event.kind() == StandardWatchEventKinds.OVERFLOW) continue;
 
                 Path fileName = (Path) event.context();
                 Path fullPath = folderToWatch.resolve(fileName);
 
-                // Esperar un momento para que el archivo termine de copiarse
                 Thread.sleep(500);
-
                 processFile(fullPath);
             }
 
@@ -52,20 +45,21 @@ public class FolderWatcher {
         }
     }
 
-    // Clasifica y mueve el archivo detectado
     private void processFile(Path file) {
-        if (!Files.exists(file) || Files.isDirectory(file)) {
-            return;
-        }
+        if (!Files.exists(file) || Files.isDirectory(file)) return;
 
         String fileName = file.getFileName().toString();
+
+        // No procesar el propio archivo de log
+        if (fileName.equals("organizador.log")) return;
+
         FileType fileType = classifier.classify(fileName);
 
         try {
             mover.move(file, folderToWatch, fileType);
-            System.out.println("✅ Movido: " + fileName + " → " + fileType.name());
+            logger.logMovimiento(fileName, fileType);
         } catch (IOException e) {
-            System.out.println("❌ Error al mover " + fileName + ": " + e.getMessage());
+            logger.logError(fileName, e.getMessage());
         }
     }
 }
